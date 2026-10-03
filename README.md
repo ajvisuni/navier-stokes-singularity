@@ -1,10 +1,12 @@
 # Navier-Stokes Finite-Time Singularity Visualizer
 
+![Preview](assets/preview.png)
+
 Interactive WebGL/Three.js illustrative visualization inspired by the finite-time blowup construction for the 3D incompressible Navier-Stokes equations. Loosely based on the similarity scaling in [*Finite Time Blowup for Navier-Stokes*](https://cdn.openai.com/pdf/32d9f210-8b73-45e0-91bc-82a30aef8a9a/navier-stokes.pdf) (OpenAI).
 
 ## Mathematical Overview
 
-The visualization illustrates the idea of finite-time blowup ($\Vert{}u(t)\Vert{}_{L^\infty} \to \infty$ as $t \uparrow 1$) by structuring a self-similar core surrounded by an oscillatory momentum-flux transfer annulus. The paper proves blowup with bounded kinetic energy; this demo does not compute or verify energy.
+The visualization illustrates the idea of finite-time blowup ($\Vert{}u(t)\Vert{}_{L^\infty} \to \infty$ as $t \uparrow 1$) by structuring a self-similar core surrounded by an oscillatory momentum-flux transfer annulus. The paper proves blowup with bounded kinetic energy; this demo does not compute or verify energy. JUST A FUN PROJECT OF MINE ;)
 
 ### Similarity Scaling Implemented
 - **Remaining Time Parameter:** $\tau = 1 - t$
