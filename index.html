@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navier-Stokes Finite-Time Blowup Research Profiler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ui-bg: #000000;
+            --ui-border: #1a1a1a;
+            --text-main: #cccccc;
+            --text-muted: #555555;
+            --accent: #ffffff;
+            --bg-color: #000000;
+        }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+            font-family: 'JetBrains Mono', monospace; 
+            user-select: none;
+        }
+        #canvas-container { 
+            width: 100vw; 
+            height: 100vh; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 1; 
+        }
+        #ui-layer { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 10; 
+            pointer-events: none; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between; 
+            padding: 2rem; 
+            box-sizing: border-box;
+        }
+        .data-panel { 
+            background: rgba(0, 0, 0, 0.9); 
+            border-left: 1px solid var(--ui-border); 
+            padding: 1.5rem; 
+            pointer-events: auto; 
+            align-self: flex-end;
+            min-width: 340px;
+            backdrop-filter: blur(8px);
+        }
+        .control-panel {
+            pointer-events: auto;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            border-top: 1px solid var(--ui-border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2rem;
+            box-sizing: border-box;
+            backdrop-filter: blur(8px);
+        }
+        input[type=range] { 
+            -webkit-appearance: none; 
+            width: 100%; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb { 
+            -webkit-appearance: none; 
+            height: 14px; 
+            width: 4px; 
+            background: var(--accent); 
+            cursor: pointer; 
+            margin-top: -6px; 
+        }
+        input[type=range]::-webkit-slider-runnable-track { 
+            width: 100%; 
+            height: 2px; 
+            cursor: pointer; 
+            background: var(--ui-border); 
+        }
+        .btn-tech {
+            background: transparent;
+            border: 1px solid var(--ui-border);
+            color: var(--text-muted);
+            padding: 0.5rem 1.25rem;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-tech:hover {
+            border-color: #888;
+            color: #ccc;
+        }
+        .btn-tech.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(255,255,255,0.05);
+        }
+        .data-label { color: var(--text-muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.25rem; }
+        .data-value { font-size: 1.15rem; font-weight: 400; font-variant-numeric: tabular-nums; margin-bottom: 1rem; }
+        .data-value.critical { color: #ff3333; text-shadow: 0 0 10px rgba(255,51,51,0.5); }
+        .data-value.warning { color: #ffaa00; }
+        .header-title {
+            position: absolute;
+            top: 2rem;
+            left: 2rem;
+            font-size: 0.8rem;
+            letter-spacing: 3px;
+            color: #777;
+            text-transform: uppercase;
+        }
+        .view-modes {
+            display: flex;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    
+    <div id="ui-layer">
+        <div class="header-title">Navier-Stokes Blowup Research Profiler // v2.8 (Exact Tau Scaling)</div>
+
+        <div class="data-panel text-right">
+            <div class="data-label">Time to Singularity (τ = 1 - t)</div>
+            <div id="time-display" class="text-3xl text-white mb-6" style="font-variant-numeric: tabular-nums;">1.00000</div>
+            
+            <div class="data-label">Inner Core Scale (lr ≈ τ^1/2)</div>
+            <div id="stat-rad" class="data-value">1.000e0</div>
+
+            <div class="data-label">Axial Jet Scale (lz ≈ τ^1/2-h)</div>
+            <div id="stat-height" class="data-value">1.000e0</div>
+            
+            <div class="data-label">Max Velocity Magnitude ||u||∞</div>
+            <div id="stat-vel" class="data-value">1.000e0</div>
+
+            <div class="data-label">Active Flow Regime</div>
+            <div id="stat-zone" class="text-xs uppercase tracking-widest text-gray-500">Initialization</div>
+        </div>
+
+        <div class="control-panel">
+            <div class="flex gap-4 items-center">
+                <button id="btn-play" class="btn-tech active">PLAY</button>
+                <button id="btn-reset" class="btn-tech">RESET</button>
+                <div class="h-4 w-[1px] bg-[#222]"></div>
+                <div class="view-modes">
+                    <button id="btn-view-iso" class="btn-tech active">ISO</button>
+                    <button id="btn-view-top" class="btn-tech">POLAR</button>
+                    <button id="btn-view-core" class="btn-tech">CORE MACRO</button>
+                </div>
+            </div>
+            
+            <div class="flex-grow max-w-xl relative px-6">
+                <div class="flex justify-between text-[10px] text-gray-600 mb-2 uppercase tracking-widest">
+                    <span>Initial State (t = 0)</span>
+                    <span>Singularity Collapse (t = 1)</span>
+                </div>
+                <input type="range" id="time-slider" min="0" max="0.999" step="0.0001" value="0">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const h_param = 0.08; 
+        const A_param = 0.5 + h_param;
+        const D_param = 0.5 - h_param;
+        
+        let isPlaying = true;
+        let time = 0; 
+        const maxTime = 0.999; 
+        const numParticles = 90000;
+        let cameraMode = 'iso';
+
+        const timeSlider = document.getElementById('time-slider');
+        const timeDisplay = document.getElementById('time-display');
+        const btnPlay = document.getElementById('btn-play');
+        const btnReset = document.getElementById('btn-reset');
+        const btnViewIso = document.getElementById('btn-view-iso');
+        const btnViewTop = document.getElementById('btn-view-top');
+        const btnViewCore = document.getElementById('btn-view-core');
+        const statVel = document.getElementById('stat-vel');
+        const statRad = document.getElementById('stat-rad');
+        const statHeight = document.getElementById('stat-height');
+        const statZone = document.getElementById('stat-zone');
+
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.FogExp2(0x000000, 0.010);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(48, 24, 60);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(numParticles * 3);
+        const velocityMags = new Float32Array(numParticles);
+        const lifetimes = new Float32Array(numParticles);
+
+        for (let i = 0; i < numParticles; i++) {
+            const r = Math.pow(Math.random(), 2.4) * 38 + 0.08; 
+            const theta = Math.random() * Math.PI * 2;
+            const y = (Math.random() - 0.5) * 50;
+
+            positions[i * 3]     = r * Math.cos(theta);
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = r * Math.sin(theta);
+            
+            velocityMags[i] = 0.0;
+            lifetimes[i] = Math.random(); 
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('aVelocityMag', new THREE.BufferAttribute(velocityMags, 1));
+        geometry.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
+
+        const vertexShader = `
+            uniform float uPixelRatio;
+            attribute float aVelocityMag;
+            attribute float aLifetime;
+            
+            varying vec3 vColor;
+            varying float vAlpha;
+
+            vec3 inferno(float t) {
+                t = clamp(t, 0.0, 1.0);
+                vec3 c0 = vec3(0.02, 0.00, 0.05); 
+                vec3 c1 = vec3(0.28, 0.04, 0.48); 
+                vec3 c2 = vec3(0.78, 0.08, 0.25); 
+                vec3 c3 = vec3(0.98, 0.48, 0.06); 
+                vec3 c4 = vec3(0.99, 0.94, 0.38); 
+                vec3 c5 = vec3(1.00, 1.00, 1.00); 
+
+                if (t < 0.2) return mix(c0, c1, t / 0.2);
+                if (t < 0.4) return mix(c1, c2, (t - 0.2) / 0.2);
+                if (t < 0.6) return mix(c2, c3, (t - 0.4) / 0.2);
+                if (t < 0.8) return mix(c3, c4, (t - 0.6) / 0.2);
+                return mix(c4, c5, (t - 0.8) / 0.2);
+            }
+
+            void main() {
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vColor = inferno(aVelocityMag);
+                vAlpha = 0.35 + 0.5 * aLifetime;
+                
+                gl_Position = projectionMatrix * mvPosition;
+                
+                float baseSize = 65.0;
+                float sizeMultiplier = 0.75 + (aVelocityMag * 2.8);
+                gl_PointSize = baseSize * sizeMultiplier * uPixelRatio * (1.0 / -mvPosition.z);
+            }
+        `;
+
+        const fragmentShader = `
+            varying vec3 vColor;
+            varying float vAlpha;
+
+            void main() {
+                vec2 xy = gl_PointCoord.xy - vec2(0.5);
+                float ll = length(xy);
+                
+                if (ll > 0.5) discard;
+                
+                float glow = exp(-ll * ll * 16.0);
+                gl_FragColor = vec4(vColor * glow * vAlpha, glow * vAlpha);
+            }
+        `;
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uPixelRatio: { value: renderer.getPixelRatio() }
+            },
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending 
+        });
+
+        const particleSystem = new THREE.Points(geometry, material);
+        scene.add(particleSystem);
+
+        let phaseOffset = 0;
+
+        function updatePhysics(dt) {
+            const pos = particleSystem.geometry.attributes.position.array;
+            const vels = particleSystem.geometry.attributes.aVelocityMag.array;
+            
+            const tau = Math.max(1.0 - time, 0.00001); 
+            
+            const lr = Math.pow(tau, 0.5); 
+            const lz = Math.pow(tau, D_param); 
+            const theoreticalMaxV = Math.pow(tau, -A_param);
+
+            let maxVelObserved = 0;
+            let activeZone = "Heat Exterior";
+            
+            phaseOffset += dt * 6.5;
+
+            for (let i = 0; i < numParticles; i++) {
+                let idx = i * 3;
+                let x = pos[idx];
+                let y = pos[idx + 1]; 
+                let z = pos[idx + 2];
+
+                let r = Math.sqrt(x*x + z*z);
+                let theta = Math.atan2(z, x);
+
+                let q = tau + Math.pow(Math.abs(y), 1.0 / D_param);
+                let X_sim = (r * r) / (2.0 * q);
+                let eta = y / Math.pow(q, D_param);
+
+                let vr = -(r / (2.0 * q)) * Math.exp(-X_sim);
+                let vtheta = Math.pow(q, -A_param) * (Math.sqrt(2.0 * X_sim) * Math.exp(-X_sim) + Math.pow(X_sim + 0.1, -A_param));
+                let vy = Math.pow(q, -A_param) * (4.0 * eta * Math.exp(-X_sim));
+
+                if (X_sim > 0.35 && X_sim < 3.4) {
+                    let waveEnvelope = Math.exp(-Math.pow(X_sim - 1.5, 2.0));
+                    let wave = Math.sin(14.0 * theta + 28.0 * X_sim - phaseOffset);
+                    vtheta += wave * waveEnvelope * Math.pow(q, -A_param) * 0.65;
+                    vr += Math.cos(wave) * waveEnvelope * 2.8;
+                    activeZone = "Oscillatory Pulse Annulus";
+                } else if (X_sim <= 0.35) {
+                    activeZone = "Inner Core Singularity";
+                }
+
+                let rawVelMag = Math.sqrt(vr*vr + vtheta*vtheta + vy*vy);
+                if(rawVelMag > maxVelObserved) maxVelObserved = rawVelMag;
+
+                let normVel = Math.log(1.0 + rawVelMag) / Math.log(1.0 + theoreticalMaxV * 2.5);
+                vels[i] = Math.max(0.0, Math.min(1.0, normVel));
+
+                let maxDisplacement = 0.55; 
+                let stepR = vr * dt;
+                let stepTheta = (vtheta / Math.max(r, 0.01)) * dt;
+                let stepY = vy * dt;
+
+                let stepMag = Math.sqrt(stepR*stepR + stepY*stepY + (r*stepTheta)*(r*stepTheta));
+                if (stepMag > maxDisplacement) {
+                    let scale = maxDisplacement / stepMag;
+                    stepR *= scale;
+                    stepTheta *= scale;
+                    stepY *= scale;
+                }
+
+                let newR = r + stepR;
+                theta += stepTheta;
+                y += stepY;
+
+                if (Math.abs(y) > 55 || newR < 0.03) {
+                    newR = Math.random() * 34 + 6;
+                    theta = Math.random() * Math.PI * 2;
+                    y = (Math.random() - 0.5) * 50;
+                }
+
+                pos[idx]     = newR * Math.cos(theta);
+                pos[idx + 1] = y;
+                pos[idx + 2] = newR * Math.sin(theta);
+            }
+
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.aVelocityMag.needsUpdate = true;
+            
+            return { lr, lz, maxVelObserved, activeZone };
+        }
+
+        function updateUI(stats) {
+            timeSlider.value = time;
+            const tau = Math.max(1.0 - time, 0.00001);
+            
+            timeDisplay.innerText = tau.toFixed(5);
+            
+            if(stats) {
+                statRad.innerText = stats.lr.toExponential(3);
+                statHeight.innerText = stats.lz.toExponential(3);
+                statVel.innerText = stats.maxVelObserved.toExponential(3);
+                statZone.innerText = stats.activeZone;
+
+                if(tau < 0.05) {
+                    timeDisplay.classList.add('critical');
+                    statVel.classList.add('critical');
+                    statRad.classList.add('warning');
+                } else {
+                    timeDisplay.classList.remove('critical');
+                    statVel.classList.remove('critical');
+                    statRad.classList.remove('warning');
+                }
+            }
+        }
+
+        timeSlider.addEventListener('input', (e) => {
+            time = parseFloat(e.target.value);
+            isPlaying = false;
+            btnPlay.innerText = "PAUSED";
+            btnPlay.classList.remove('active');
+            let stats = updatePhysics(0.016); 
+            updateUI(stats);
+        });
+
+        btnPlay.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            btnPlay.innerText = isPlaying ? "PLAY" : "PAUSED";
+            if(isPlaying) btnPlay.classList.add('active');
+            else btnPlay.classList.remove('active');
+        });
+
+        btnReset.addEventListener('click', () => {
+            time = 0;
+            isPlaying = true;
+            btnPlay.innerText = "PLAY";
+            btnPlay.classList.add('active');
+            
+            const pos = particleSystem.geometry.attributes.position.array;
+            for (let i = 0; i < numParticles; i++) {
+                const r = Math.pow(Math.random(), 2.4) * 38 + 0.08; 
+                const theta = Math.random() * Math.PI * 2;
+                pos[i * 3]     = r * Math.cos(theta);
+                pos[i * 3 + 1] = (Math.random() - 0.5) * 50;
+                pos[i * 3 + 2] = r * Math.sin(theta);
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            updateUI({ lr: 1.0, lz: 1.0, maxVelObserved: 0, activeZone: "Heat Exterior" });
+        });
+
+        btnViewIso.addEventListener('click', () => {
+            cameraMode = 'iso';
+            btnViewIso.classList.add('active');
+            btnViewTop.classList.remove('active');
+            btnViewCore.classList.remove('active');
+        });
+
+        btnViewTop.addEventListener('click', () => {
+            cameraMode = 'top';
+            btnViewTop.classList.add('active');
+            btnViewIso.classList.remove('active');
+            btnViewCore.classList.remove('active');
+        });
+
+        btnViewCore.addEventListener('click', () => {
+            cameraMode = 'core';
+            btnViewCore.classList.add('active');
+            btnViewIso.classList.remove('active');
+            btnViewTop.classList.remove('active');
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = 0.016; 
+
+            if (isPlaying) {
+                let timeStep = 0.012 * Math.pow(1.0 - time, 0.5);
+                time += timeStep * dt; 
+                
+                if (time >= maxTime) {
+                    time = maxTime;
+                    isPlaying = false;
+                    btnPlay.innerText = "SINGULARITY";
+                    btnPlay.classList.remove('active');
+                }
+            }
+
+            let stats = updatePhysics(dt);
+            if(isPlaying) updateUI(stats);
+
+            const elapsedTime = clock.getElapsedTime();
+            const tau = 1.0 - time;
+            
+            if (cameraMode === 'iso') {
+                camera.position.x = 52 * Math.cos(elapsedTime * 0.1);
+                camera.position.z = 52 * Math.sin(elapsedTime * 0.1);
+                camera.position.y = 25 + Math.sin(elapsedTime * 0.05) * 5;
+                camera.lookAt(0, 0, 0);
+            } else if (cameraMode === 'top') {
+                camera.position.set(0, 75, 0.1);
+                camera.lookAt(0, 0, 0);
+            } else if (cameraMode === 'core') {
+                camera.position.set(0, 0, 18 * Math.max(tau, 0.2));
+                camera.lookAt(0, 0, 0);
+            }
+            
+            if (tau < 0.05 && isPlaying) {
+                const shake = (0.05 - tau) * 30.0;
+                camera.position.x += (Math.random() - 0.5) * shake;
+                camera.position.y += (Math.random() - 0.5) * shake;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            material.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+        });
+
+        window.onload = () => {
+            animate();
+            updateUI({ lr: 1.0, lz: 1.0, maxVelObserved: 0, activeZone: "Heat Exterior" });
+        };
+    </script>
+</body>
+</html>
